@@ -20,7 +20,15 @@ if (typeof window === 'undefined') {
     const reloadedBySelf = window.sessionStorage.getItem("coiReloadedBySelf");
     if (reloadedBySelf) { window.sessionStorage.removeItem("coiReloadedBySelf"); return; }
     const n = navigator;
-    if (n.serviceWorker && n.serviceWorker.controller) { n.serviceWorker.controller.postMessage({ type: "coi-check" }); }
-    else { !async function () { await n.serviceWorker.register("coi-serviceworker.js"); window.sessionStorage.setItem("coiReloadedBySelf", "true"); window.location.reload(); }(); }
+    if (n.serviceWorker && n.serviceWorker.controller) { 
+        n.serviceWorker.controller.postMessage({ type: "coi-check" }); 
+    } else { 
+        !async function () { 
+            // MODIFICATION ICI : Ajout du "./" pour forcer le chemin relatif
+            await n.serviceWorker.register("./coi-serviceworker.js"); 
+            window.sessionStorage.setItem("coiReloadedBySelf", "true"); 
+            window.location.reload(); 
+        }(); 
+    }
   })();
 }
