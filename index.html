@@ -6,7 +6,26 @@
     <title>LLM Local Researcher Agent</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
-    <script src="coi-serviceworker.js"></script>
+    <script>
+        if ("serviceWorker" in navigator) {
+            // Détecte si on est sur GitHub Pages pour ajuster le chemin
+            const path = window.location.pathname.includes("/Paper_Analysis_LLM") 
+                ? "./coi-serviceworker.js" 
+                : "/coi-serviceworker.js";
+
+            navigator.serviceWorker.register("./coi-serviceworker.js")
+            .then((registration) => {
+                console.log("Service Worker enregistré avec succès :", registration.scope);
+                
+                if (!navigator.serviceWorker.controller) {
+                    window.location.reload();
+                }
+            })
+            .catch((err) => {
+                console.error("Échec de l'enregistrement du Service Worker :", err);
+            });
+        }
+    </script>
     <style>
         /* Styles pour le Markdown généré (Gras, Listes) */
         .prose strong { color: #2563eb; font-weight: 700; }
