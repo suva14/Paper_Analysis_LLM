@@ -1,0 +1,385 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>LLM Local Researcher Agent</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <script src="coi-serviceworker.js"></script>
+    <style>
+        /* Styles pour le Markdown généré (Gras, Listes) */
+        .prose strong { color: #2563eb; font-weight: 700; }
+        .prose ul { list-style-type: disc; padding-left: 1.5rem; margin-top: 0.5rem; }
+        .prose li { margin-bottom: 0.25rem; }
+        .prose h3 { font-size: 1.1em; font-weight: bold; margin-top: 1rem; color: #1e293b; }
+        
+        /* Style pour la conversation active */
+        .active-chat { border-left: 4px solid #3b82f6; background-color: #f1f5f9; }
+
+        /* Slider */
+        input[type=range] { -webkit-appearance: none; background: transparent; }
+        input[type=range]::-webkit-slider-thumb { -webkit-appearance: none; height: 16px; width: 16px; border-radius: 50%; background: #3b82f6; margin-top: -6px; }
+        input[type=range]::-webkit-slider-runnable-track { width: 100%; height: 4px; background: #e2e8f0; border-radius: 2px; }
+    </style>
+</head>
+<body class="bg-slate-50 text-slate-800 h-screen flex flex-col md:flex-row overflow-hidden font-sans">
+
+    <aside class="w-full md:w-80 bg-white border-r border-slate-200 flex flex-col z-20 shadow-lg">
+        <div class="p-4 border-b border-slate-100 bg-slate-50 flex justify-between items-center">
+            <div>
+                <h1 class="text-lg font-bold text-slate-800"><i class="fas fa-microchip text-blue-600 mr-2"></i>Paper LLM</h1>
+                <p class="text-xs text-slate-500">Local Research Agent</p>
+            </div>
+            <button id="new-chat-btn" class="bg-blue-100 hover:bg-blue-200 text-blue-700 p-2 rounded-full transition w-8 h-8 flex items-center justify-center" title="New Chat">
+                <i class="fas fa-plus text-xs"></i>
+            </button>
+        </div>
+
+        <div class="flex-shrink-0 max-h-40 overflow-y-auto border-b border-slate-100 bg-slate-50/50">
+            <div id="chat-list" class="space-y-0.5">
+                </div>
+        </div>
+
+        <div class="flex-1 overflow-y-auto bg-white p-4 space-y-4">
+            
+            <div>
+                <label class="block text-xs font-bold text-slate-400 uppercase mb-1">AI Model</label>
+                <select id="model-select" class="w-full text-xs p-2 border border-slate-300 rounded focus:ring-2 focus:ring-blue-500 outline-none bg-slate-50">
+                    <option value="Llama-3.2-1B-Instruct-q4f32_1-MLC">Llama 3.2 1B (Fastest)</option>
+                    <option value="Llama-3.2-3B-Instruct-q4f16_1-MLC">Llama 3.2 3B (Smartest)</option>
+                </select>
+            </div>
+
+            <div>
+                <div class="flex justify-between text-xs mb-1">
+                    <label class="font-bold text-slate-400 uppercase">Temperature</label>
+                    <span id="temp-val" class="font-mono text-blue-600">0.5</span>
+                </div>
+                <input type="range" id="temp-slider" min="0.1" max="1.0" step="0.1" value="0.5" class="w-full cursor-pointer">
+            </div>
+
+            <div>
+                <label class="block text-xs font-bold text-slate-400 uppercase mb-1">System Prompt</label>
+                <textarea id="sys-prompt" rows="2" class="w-full text-xs p-2 border border-slate-300 rounded focus:ring-2 focus:ring-blue-500 outline-none bg-slate-50 resize-none">You are an expert academic researcher. Analyze the provided research papers and answer strictly based on the documents.</textarea>
+            </div>
+
+            <div id="status-card" class="bg-slate-50 rounded border border-slate-200 p-3 text-xs">
+                <div class="flex justify-between mb-2">
+                    <span class="font-bold">Status:</span>
+                    <span id="system-status" class="text-orange-500 font-bold truncate max-w-[100px]">Waiting</span>
+                </div>
+                <div class="w-full bg-slate-200 rounded-full h-1.5 mb-2">
+                    <div id="progress-bar" class="bg-blue-600 h-1.5 rounded-full transition-all duration-300" style="width: 0%"></div>
+                </div>
+                <button id="init-btn" class="w-full bg-blue-600 hover:bg-blue-700 text-white py-2 rounded transition font-semibold">
+                    Load Model
+                </button>
+            </div>
+
+            <div class="pt-2 border-t border-slate-100">
+                <h2 class="text-xs font-bold text-slate-400 uppercase mb-2">PDF</h2>
+                <div id="drop-zone" class="border-2 border-dashed border-slate-300 rounded p-4 text-center hover:border-blue-500 transition cursor-pointer bg-white">
+                    <i class="fas fa-file-pdf text-xl text-slate-400 mb-1"></i>
+                    <p class="text-[10px] text-slate-500">Click or Drag PDFs</p>
+                    <input type="file" id="file-input" multiple accept=".pdf" class="hidden">
+                </div>
+                <div id="file-list" class="mt-2 space-y-1"></div>
+                <p class="mt-2 text-[10px] text-slate-400 text-right">Chunks: <span id="chunk-count" class="font-bold text-slate-700">0</span></p>
+            </div>
+        </div>
+    </aside>
+
+    <main class="flex-1 flex flex-col bg-slate-100 relative">
+        <div id="chat-container" class="flex-1 overflow-y-auto p-6 space-y-4">
+            <div class="flex items-start gap-3">
+                <div class="w-8 h-8 rounded-full bg-blue-600 flex items-center justify-center text-white text-xs shadow"><i class="fas fa-robot"></i></div>
+                <div class="bg-white p-3 rounded-lg border border-slate-200 shadow-sm text-sm max-w-2xl">
+                    <p><strong>System Ready.</strong> Hello! I'm your personal paper reviewer. Upload PDF research papers using the drag & drop zone on the left, and I'll analyze them.</p>
+                </div>
+            </div>
+        </div>
+
+        <div id="processing-badge" class="hidden absolute bottom-20 left-1/2 -translate-x-1/2 bg-blue-600 text-white px-4 py-2 rounded-full shadow-lg text-xs font-bold flex items-center gap-2 animate-pulse">
+            <i class="fas fa-circle-notch fa-spin"></i>
+            <span>Processing...</span>
+        </div>
+
+        <div class="p-4 bg-white border-t border-slate-200">
+            <div class="max-w-4xl mx-auto relative">
+                <textarea id="user-input" rows="1" class="w-full bg-slate-50 text-slate-800 border border-slate-300 rounded-lg pl-4 pr-12 py-3 focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm resize-none shadow-inner" placeholder="Ask about your documents..."></textarea>
+                <button id="send-btn" class="absolute right-2 bottom-2 text-blue-600 hover:text-blue-800 p-2 transition"><i class="fas fa-paper-plane"></i></button>
+            </div>
+        </div>
+    </main>
+
+    <script type="module">
+        import * as webllm from "https://esm.run/@mlc-ai/web-llm";
+        import { pipeline, env } from 'https://cdn.jsdelivr.net/npm/@xenova/transformers@2.17.2';
+        import * as pdfjsLib from 'https://mozilla.github.io/pdf.js/build/pdf.mjs';
+
+        // --- CONFIGURATION ---
+        pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://mozilla.github.io/pdf.js/build/pdf.worker.mjs';
+        env.allowLocalModels = false;
+        env.useBrowserCache = true;
+
+        // --- STATE MANAGEMENT ---
+        const state = {
+            vectorStore: [], 
+            chats: [{ id: 1, title: "New Conversation", messages: [] }], // Liste des chats
+            activeChatId: 1,
+            engine: null, 
+            embedder: null, 
+            isModelLoaded: false,
+            currentModel: null
+        };
+
+        const els = {
+            modelSel: document.getElementById('model-select'),
+            tempSlide: document.getElementById('temp-slider'),
+            tempVal: document.getElementById('temp-val'),
+            sysPrompt: document.getElementById('sys-prompt'),
+            initBtn: document.getElementById('init-btn'),
+            status: document.getElementById('system-status'),
+            bar: document.getElementById('progress-bar'),
+            files: document.getElementById('file-input'),
+            list: document.getElementById('file-list'),
+            count: document.getElementById('chunk-count'),
+            chat: document.getElementById('chat-container'),
+            chatList: document.getElementById('chat-list'),
+            newChatBtn: document.getElementById('new-chat-btn'),
+            input: document.getElementById('user-input'),
+            send: document.getElementById('send-btn'),
+            proc: document.getElementById('processing-badge')
+        };
+
+        // --- HELPERS (Markdown & Chats) ---
+
+        // 1. Markdown Parser (Transforme ** en gras, * en listes)
+        function parseMarkdown(text) {
+            let html = text
+                .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>') // Gras
+                .replace(/^### (.*$)/gm, '<h3>$1</h3>') // Titres
+                .replace(/\n/g, '<br>'); // Sauts de ligne
+            
+            // Listes à puces
+            html = html.replace(/^\* (.*$)/gm, '<li>$1</li>');
+            if (html.includes('<li>')) {
+                html = html.replace(/((<li>.*<\/li>\s*)+)/g, '<ul>$1</ul>');
+            }
+            return html;
+        }
+
+        // 2. Gestion Multi-Chat
+        function renderChatList() {
+            els.chatList.innerHTML = '';
+            state.chats.forEach(chat => {
+                const div = document.createElement('div');
+                div.className = `p-2 pl-4 cursor-pointer hover:bg-slate-100 text-xs text-slate-700 truncate transition border-l-4 ${chat.id === state.activeChatId ? 'border-blue-500 bg-slate-50 font-bold' : 'border-transparent'}`;
+                div.innerText = chat.title;
+                div.onclick = () => switchChat(chat.id);
+                els.chatList.appendChild(div);
+            });
+        }
+
+        function switchChat(id) {
+            state.activeChatId = id;
+            renderChatList();
+            els.chat.innerHTML = ''; // Clear vue
+            // Re-render messages
+            const currentChat = state.chats.find(c => c.id === id);
+            if(currentChat) {
+                currentChat.messages.forEach(msg => appendMsgToDOM(msg.role, msg.content));
+            }
+        }
+
+        els.newChatBtn.addEventListener('click', () => {
+            const newId = Date.now();
+            state.chats.unshift({ id: newId, title: "New Chat", messages: [] });
+            switchChat(newId);
+        });
+
+        // Init Chat List
+        renderChatList();
+
+        // --- UI EVENTS ---
+        els.tempSlide.addEventListener('input', (e) => els.tempVal.innerText = e.target.value);
+        
+        // --- CORE ENGINE ---
+        els.initBtn.addEventListener('click', async () => {
+            const selectedModel = els.modelSel.value;
+            els.initBtn.disabled = true;
+            els.modelSel.disabled = true;
+            
+            try {
+                if(!state.embedder) {
+                    updateStatus("Loading Embedder...", 10);
+                    state.embedder = await pipeline('feature-extraction', 'Xenova/all-MiniLM-L6-v2');
+                }
+
+                if(!state.engine) {
+                    state.engine = new webllm.MLCEngine();
+                    state.engine.setInitProgressCallback((report) => {
+                        updateStatus(report.text, report.progress * 100);
+                    });
+                }
+
+                if(state.currentModel !== selectedModel) {
+                    updateStatus(`Loading ${selectedModel}...`, 20);
+                    await state.engine.reload(selectedModel);
+                    state.currentModel = selectedModel;
+                }
+
+                state.isModelLoaded = true;
+                updateStatus("Ready", 100, "text-green-600");
+                els.initBtn.innerText = "Model Loaded";
+                els.initBtn.disabled = false;
+                els.modelSel.disabled = false;
+
+            } catch(e) {
+                console.error(e);
+                updateStatus("Error", 0, "text-red-500");
+                alert("Error: Check console (need HTTPS or localhost + server.py).");
+            }
+        });
+
+        function updateStatus(text, pct, color = "text-orange-500") {
+            els.status.innerText = text;
+            els.status.className = `${color} font-bold truncate`;
+            els.bar.style.width = `${pct}%`;
+        }
+
+        // --- RAG PIPELINE ---
+        els.files.addEventListener('change', async (e) => {
+            if(!state.embedder) return alert("Please load the model first!");
+            toggleProc(true);
+            for(const file of e.target.files) {
+                const d = document.createElement('div');
+                d.className = "text-[10px] bg-white border border-slate-200 p-1 rounded flex justify-between";
+                d.innerHTML = `<span class="truncate w-32">${file.name}</span><i class="fas fa-check text-green-500"></i>`;
+                els.list.appendChild(d);
+
+                const text = await parsePDF(file);
+                // Chunking optimisé: 800 chars pour réduire le nombre de vecteurs (plus rapide)
+                const chunks = chunkText(text, 800); 
+
+                for(const chunk of chunks) {
+                    const vec = await state.embedder(chunk, { pooling: 'mean', normalize: true });
+                    state.vectorStore.push({ text: chunk, vec: vec.data, src: file.name });
+                }
+            }
+            els.count.innerText = state.vectorStore.length;
+            toggleProc(false);
+        });
+
+        async function parsePDF(file) {
+            const pdf = await pdfjsLib.getDocument({ data: await file.arrayBuffer() }).promise;
+            let txt = "";
+            for(let i=1; i<=pdf.numPages; i++) {
+                txt += (await (await pdf.getPage(i)).getTextContent()).items.map(s=>s.str).join(' ') + " ";
+            }
+            return txt;
+        }
+
+        function chunkText(text, size=800) {
+            return text.match(new RegExp(`.{1,${size}}`, 'g')) || [];
+        }
+
+        // --- CHAT LOGIC ---
+        els.send.addEventListener('click', chat);
+        els.input.addEventListener('keydown', (e) => { 
+            if(e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); chat(); }
+        });
+
+        async function chat() {
+            const q = els.input.value.trim();
+            if(!q || !state.isModelLoaded) return;
+
+            // 1. Gestion Multi-Chat
+            const activeChat = state.chats.find(c => c.id === state.activeChatId);
+            activeChat.messages.push({ role: "user", content: q });
+            
+            // Rename chat if first message
+            if(activeChat.messages.length === 1) {
+                activeChat.title = q.substring(0, 20) + "...";
+                renderChatList();
+            }
+
+            appendMsgToDOM('user', q);
+            els.input.value = "";
+            toggleProc(true);
+
+            // 2. Retrieval
+            let context = "";
+            if(state.vectorStore.length > 0) {
+                const qVec = await state.embedder(q, { pooling: 'mean', normalize: true });
+                const scores = state.vectorStore.map(d => ({ ...d, score: cosine(qVec.data, d.vec) })).sort((a,b)=>b.score-a.score);
+                context = scores.slice(0, 3).map(s => `[Source: ${s.src}] ${s.text}`).join("\n\n");
+            }
+
+            // 3. Prompt Construction
+            const userSysPrompt = els.sysPrompt.value; 
+            const userTemp = parseFloat(els.tempSlide.value);
+            const finalSystemMsg = `${userSysPrompt}\n\nCONTEXT:\n${context}`;
+
+            const messages = [
+                { role: "system", content: finalSystemMsg },
+                ...activeChat.messages.slice(-6)
+            ];
+
+            try {
+                const reply = await state.engine.chat.completions.create({
+                    messages,
+                    temperature: userTemp,
+                    max_tokens: 1024
+                });
+
+                const aiText = reply.choices[0].message.content;
+                
+                // Save & Display
+                activeChat.messages.push({ role: "assistant", content: aiText });
+                appendMsgToDOM('assistant', aiText);
+
+            } catch(e) {
+                appendMsgToDOM('system', "Error: " + e.message);
+            }
+
+            toggleProc(false);
+        }
+
+        function cosine(a, b) {
+            return a.reduce((sum, v, i) => sum + v * b[i], 0);
+        }
+
+        function appendMsgToDOM(role, text) {
+            const d = document.createElement('div');
+            d.className = `flex ${role==='user'?'justify-end':'justify-start'} animate-fade-in`;
+            
+            // Utilisation du Markdown Parser
+            const formattedText = role === 'assistant' ? parseMarkdown(text) : text;
+            const bg = role==='user'?'bg-blue-600 text-white':'bg-white border border-slate-200 text-slate-800';
+            
+            // Ajout de la classe "prose" pour le style Markdown
+            d.innerHTML = `<div class="${bg} p-3 rounded-lg max-w-xl text-sm whitespace-pre-wrap shadow-sm prose">${formattedText}</div>`;
+            els.chat.appendChild(d);
+            els.chat.scrollTop = els.chat.scrollHeight;
+        }
+
+        function toggleProc(show) {
+            els.proc.classList.toggle('hidden', !show);
+        }
+
+        // Drag & Drop
+        const dz = document.getElementById('drop-zone');
+        dz.onclick = () => els.files.click();
+        dz.ondragover = (e) => { e.preventDefault(); dz.classList.add('border-blue-500'); };
+        dz.ondragleave = () => dz.classList.remove('border-blue-500');
+        dz.ondrop = (e) => { 
+            e.preventDefault(); 
+            dz.classList.remove('border-blue-500'); 
+            els.files.files = e.dataTransfer.files; 
+            els.files.dispatchEvent(new Event('change')); 
+        };
+    </script>
+</body>
+</html>
