@@ -32,8 +32,8 @@ Due to browser security restrictions regarding `SharedArrayBuffer` (required for
 ### Steps
 1.  **Clone the repository:**
     ```bash
-    git clone [https://github.com/your-username/your-repo-name.git](https://github.com/your-username/your-repo-name.git)
-    cd your-repo-name
+    git clone [https://github.com/suva14/Paper_Analysis_LLM.git](https://github.com/suva14/Paper_Analysis_LLM.git)
+    cd Paper_Analysis_LLM
     ```
 
 2.  **Start the local server:**
